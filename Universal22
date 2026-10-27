@@ -1,0 +1,664 @@
+--[[
+ .____                  ________ ___.    _____                           __                
+ |    |    __ _______   \_____  \\_ |___/ ____\_ __  ______ ____ _____ _/  |_  ___________ 
+ |    |   |  |  \__  \   /   |   \| __ \   __\  |  \/  ___// ___\\__  \\   __\/  _ \_  __ \
+ |    |___|  |  // __ \_/    |    \ \_\ \  | |  |  /\___ \\  \___ / __ \|  | (  <_> )  | \/
+ |_______ \____/(____  /\_______  /___  /__| |____//____  >\___  >____  /__|  \____/|__|   
+         \/          \/         \/    \/                \/     \/     \/                   
+          \_Welcome to LuaObfuscator.com   (Alpha 0.10.9) ~  Much Love, Ferib 
+
+]]--
+
+bit32 = {};
+local N = 32;
+local P = 2 ^ N;
+bit32.bnot = function(x)
+	x = x % P;
+	return (P - 1) - x;
+end;
+bit32.band = function(x, y)
+	if (y == 255) then
+		return x % 256;
+	end
+	if (y == 65535) then
+		return x % 65536;
+	end
+	if (y == 4294967295) then
+		return x % 4294967296;
+	end
+	x, y = x % P, y % P;
+	local r = 0;
+	local p = 1;
+	for i = 1, N do
+		local a, b = x % 2, y % 2;
+		x, y = math.floor(x / 2), math.floor(y / 2);
+		if ((a + b) == 2) then
+			r = r + p;
+		end
+		p = 2 * p;
+	end
+	return r;
+end;
+bit32.bor = function(x, y)
+	if (y == 255) then
+		return (x - (x % 256)) + 255;
+	end
+	if (y == 65535) then
+		return (x - (x % 65536)) + 65535;
+	end
+	if (y == 4294967295) then
+		return 4294967295;
+	end
+	x, y = x % P, y % P;
+	local r = 0;
+	local p = 1;
+	for i = 1, N do
+		local a, b = x % 2, y % 2;
+		x, y = math.floor(x / 2), math.floor(y / 2);
+		if ((a + b) >= 1) then
+			r = r + p;
+		end
+		p = 2 * p;
+	end
+	return r;
+end;
+bit32.bxor = function(x, y)
+	x, y = x % P, y % P;
+	local r = 0;
+	local p = 1;
+	for i = 1, N do
+		local a, b = x % 2, y % 2;
+		x, y = math.floor(x / 2), math.floor(y / 2);
+		if ((a + b) == 1) then
+			r = r + p;
+		end
+		p = 2 * p;
+	end
+	return r;
+end;
+bit32.lshift = function(x, s_amount)
+	if (math.abs(s_amount) >= N) then
+		return 0;
+	end
+	x = x % P;
+	if (s_amount < 0) then
+		return math.floor(x * (2 ^ s_amount));
+	else
+		return (x * (2 ^ s_amount)) % P;
+	end
+end;
+bit32.rshift = function(x, s_amount)
+	if (math.abs(s_amount) >= N) then
+		return 0;
+	end
+	x = x % P;
+	if (s_amount > 0) then
+		return math.floor(x * (2 ^ -s_amount));
+	else
+		return (x * (2 ^ -s_amount)) % P;
+	end
+end;
+bit32.arshift = function(x, s_amount)
+	if (math.abs(s_amount) >= N) then
+		return 0;
+	end
+	x = x % P;
+	if (s_amount > 0) then
+		local add = 0;
+		if (x >= (P / 2)) then
+			add = P - (2 ^ (N - s_amount));
+		end
+		return math.floor(x * (2 ^ -s_amount)) + add;
+	else
+		return (x * (2 ^ -s_amount)) % P;
+	end
+end;
+local Players = game:GetService("Players");
+local UIS = game:GetService("UserInputService");
+local Run = game:GetService("RunService");
+local Lighting = game:GetService("Lighting");
+local player = Players.LocalPlayer;
+local playerGui = player:WaitForChild("PlayerGui");
+local old = playerGui:FindFirstChild("CrimsonHubUniversal");
+if old then
+	old:Destroy();
+end
+local C = {bg=Color3.fromRGB(13, 13, 16),panel=Color3.fromRGB(28, 28, 33),card=Color3.fromRGB(39, 39, 45),red=Color3.fromRGB(195, 30, 53),white=Color3.fromRGB(240, 240, 244),muted=Color3.fromRGB(166, 166, 177)};
+local function make(class, props, parent)
+	local obj = Instance.new(class);
+	for k, v in pairs(props) do
+		obj[k] = v;
+	end
+	obj.Parent = parent;
+	return obj;
+end
+local function round(obj, radius)
+	make("UICorner", {CornerRadius=UDim.new(0, radius or 10)}, obj);
+end
+local gui = make("ScreenGui", {Name="CrimsonHubUniversal",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling}, playerGui);
+local function createFrame(name, size, pos, parent, color)
+	local f = make("Frame", {Name=name,Size=size,Position=pos,BackgroundColor3=(color or C.panel),BorderSizePixel=0,Active=true}, parent);
+	round(f, 12);
+	return f;
+end
+local function makeLabel(parent, text, size, pos, textSize)
+	return make("TextLabel", {Size=size,Position=pos,BackgroundTransparency=1,Text=text,TextColor3=C.white,Font=Enum.Font.GothamBold,TextSize=(textSize or 13),TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd}, parent);
+end
+local function makeDraggable(handle, target, onClick)
+	local dragging = false;
+	local moved = false;
+	local dragStart, startPos;
+	local connections = {};
+	local function cleanup()
+		for _, conn in ipairs(connections) do
+			conn:Disconnect();
+		end
+		table.clear(connections);
+	end
+	handle.InputBegan:Connect(function(input)
+		if ((input.UserInputType == Enum.UserInputType.MouseButton1) or (input.UserInputType == Enum.UserInputType.Touch)) then
+			dragging = true;
+			moved = false;
+			dragStart = input.Position;
+			startPos = target.Position;
+			cleanup();
+			local changedConn = input.Changed:Connect(function()
+				if (input.UserInputState == Enum.UserInputState.End) then
+					dragging = false;
+					cleanup();
+					if (onClick and not moved) then
+						onClick();
+					end
+				end
+			end);
+			table.insert(connections, changedConn);
+		end
+	end);
+	UIS.InputChanged:Connect(function(input)
+		if (dragging and ((input.UserInputType == Enum.UserInputType.MouseMovement) or (input.UserInputType == Enum.UserInputType.Touch))) then
+			local delta = input.Position - dragStart;
+			if (delta.Magnitude > 5) then
+				moved = true;
+			end
+			target.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y);
+		end
+	end);
+end
+local main = createFrame("Main", UDim2.new(0.88, 0, 0.78, 0), UDim2.new(0.5, 0, 0.5, 0), gui, C.bg);
+main.AnchorPoint = Vector2.new(0.5, 0.5);
+make("UISizeConstraint", {MinSize=Vector2.new(285, 300),MaxSize=Vector2.new(850, 650)}, main);
+local header = make("Frame", {Name="Header",Size=UDim2.new(1, 0, 0, 85),BackgroundTransparency=1,Active=true}, main);
+local dragHandle = make("TextButton", {Size=UDim2.new(1, -90, 0, 40),Position=UDim2.fromOffset(10, 0),BackgroundTransparency=1,Text="◆ CRIMSON HUB",TextColor3=C.white,Font=Enum.Font.GothamBlack,TextSize=16,TextXAlignment=Enum.TextXAlignment.Left,AutoButtonColor=false}, header);
+local function topButton(text, offset)
+	local b = make("TextButton", {Size=UDim2.fromOffset(32, 29),Position=UDim2.new(1, offset, 0, 5),BackgroundColor3=C.card,Text=text,TextColor3=C.white,Font=Enum.Font.GothamBold,TextSize=18}, header);
+	round(b, 8);
+	return b;
+end
+local minimize = topButton("−", -72);
+local close = topButton("×", -36);
+local statBar = createFrame("Stats", UDim2.new(1, -20, 0, 30), UDim2.fromOffset(10, 44), header, C.panel);
+round(statBar, 8);
+local fpsLabel = makeLabel(statBar, "FPS: --", UDim2.new(0.5, -8, 1, 0), UDim2.fromOffset(8, 0), 12);
+local pingLabel = makeLabel(statBar, "PING: --", UDim2.new(0.5, -8, 1, 0), UDim2.new(0.5, 0, 0, 0), 12);
+local reopen = make("TextButton", {Name="CrimsonMini",Size=UDim2.fromOffset(52, 48),Position=UDim2.new(0, 12, 0.5, 0),BackgroundColor3=C.red,Text="CH",TextColor3=C.white,Font=Enum.Font.GothamBlack,TextSize=17,Visible=false,Active=true,ZIndex=20}, gui);
+round(reopen, 12);
+local function showMain(value)
+	main.Visible = value;
+	reopen.Visible = not value;
+end
+minimize.Activated:Connect(function()
+	showMain(false);
+end);
+makeDraggable(dragHandle, main);
+makeDraggable(reopen, reopen, function()
+	showMain(true);
+end);
+local sidebar = createFrame("Sidebar", UDim2.new(0.3, -10, 1, -95), UDim2.fromOffset(8, 89), main);
+sidebar.ClipsDescendants = true;
+local sideScroll = make("ScrollingFrame", {Size=UDim2.new(1, 0, 1, 0),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new()}, sidebar);
+make("UIPadding", {PaddingTop=UDim.new(0, 6),PaddingLeft=UDim.new(0, 5),PaddingRight=UDim.new(0, 5)}, sideScroll);
+make("UIListLayout", {Padding=UDim.new(0, 6),SortOrder=Enum.SortOrder.LayoutOrder}, sideScroll);
+local content = createFrame("Content", UDim2.new(0.7, -14, 1, -95), UDim2.new(0.3, 6, 0, 89), main);
+local pages, navButtons = {}, {};
+local function selectPage(name)
+	for n, p in pairs(pages) do
+		p.Visible = n == name;
+		navButtons[n].BackgroundColor3 = ((n == name) and C.red) or C.panel;
+		navButtons[n].TextColor3 = ((n == name) and C.white) or C.muted;
+	end
+end
+local function page(name)
+	local b = make("TextButton", {Size=UDim2.new(1, 0, 0, 38),BackgroundColor3=C.panel,BorderSizePixel=0,Text=("  " .. name),TextColor3=C.muted,Font=Enum.Font.GothamMedium,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left}, sideScroll);
+	round(b, 8);
+	local p = make("ScrollingFrame", {Size=UDim2.new(1, -14, 1, -14),Position=UDim2.fromOffset(7, 7),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=2,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new(),Visible=false}, content);
+	make("UIListLayout", {Padding=UDim.new(0, 8),SortOrder=Enum.SortOrder.LayoutOrder}, p);
+	pages[name] = p;
+	navButtons[name] = b;
+	b.Activated:Connect(function()
+		selectPage(name);
+	end);
+	return p;
+end
+local function card(parent, title, description, callback)
+	local b = make("TextButton", {Size=UDim2.new(1, -5, 0, 67),BackgroundColor3=C.card,BorderSizePixel=0,Text="",AutoButtonColor=true}, parent);
+	round(b, 10);
+	makeLabel(b, title, UDim2.new(1, -18, 0, 26), UDim2.fromOffset(9, 5), 12);
+	local desc = makeLabel(b, description, UDim2.new(1, -18, 0, 25), UDim2.fromOffset(9, 33), 10);
+	desc.Font = Enum.Font.Gotham;
+	desc.TextColor3 = C.muted;
+	if callback then
+		b.Activated:Connect(callback);
+	end
+	return b;
+end
+local state = {speed=16,jump=50,infinite=false,noclip=false,esp=false,nameESP=false,bright=false,perf=false};
+local function humanoid()
+	local ch = player.Character;
+	return ch and ch:FindFirstChildOfClass("Humanoid");
+end
+local function root()
+	local ch = player.Character;
+	return ch and ch:FindFirstChild("HumanoidRootPart");
+end
+local function numberInput(parent, title, key, min, max, callback)
+	local f = createFrame(title, UDim2.new(1, -5, 0, 62), UDim2.new(), parent, C.card);
+	makeLabel(f, title, UDim2.new(0.52, 0, 1, 0), UDim2.fromOffset(9, 0), 12);
+	local input = make("TextBox", {Size=UDim2.new(0.4, 0, 0, 36),Position=UDim2.new(0.57, 0, 0.5, -18),BackgroundColor3=C.panel,Text=tostring(state[key]),TextColor3=C.white,Font=Enum.Font.Gotham,TextSize=13,ClearTextOnFocus=false}, f);
+	round(input, 7);
+	input.FocusLost:Connect(function()
+		local n = tonumber(input.Text);
+		if n then
+			state[key] = math.clamp(n, min, max);
+			callback(state[key]);
+		end
+		input.Text = tostring(state[key]);
+	end);
+	return input;
+end
+local function toggle(parent, title, description, key, callback)
+	local b = card(parent, title, description);
+	local status = make("TextLabel", {Size=UDim2.fromOffset(37, 19),Position=UDim2.new(1, -43, 0, 4),BackgroundColor3=C.panel,Text="OFF",TextColor3=C.muted,Font=Enum.Font.GothamBold,TextSize=9}, b);
+	round(status, 5);
+	local function update()
+		status.Text = (state[key] and "ON") or "OFF";
+		status.TextColor3 = (state[key] and Color3.fromRGB(255, 90, 110)) or C.muted;
+	end
+	b.Activated:Connect(function()
+		state[key] = not state[key];
+		if callback then
+			callback(state[key]);
+		end
+		update();
+	end);
+	update();
+	return update;
+end
+local general = page("General");
+card(general, "Welcome to Crimson Hub", "Universal V2 • Crimson Edition");
+card(general, "Live Performance", "FPS and ping are displayed above");
+card(general, "Controls", "Drag title bar to move • − minimizes • CH reopens");
+local movement = page("Player");
+local speedBox = numberInput(movement, "WalkSpeed", "speed", 0, 100, function(v)
+	local h = humanoid();
+	if h then
+		h.WalkSpeed = v;
+	end
+end);
+local jumpBox = numberInput(movement, "JumpPower", "jump", 0, 150, function(v)
+	local h = humanoid();
+	if h then
+		h.UseJumpPower = true;
+		h.JumpPower = v;
+	end
+end);
+toggle(movement, "Infinite Jump", "Jump while airborne", "infinite");
+toggle(movement, "Noclip", "Disable local character collisions", "noclip");
+local flyPanel = createFrame("CrimsonFlyPanel", UDim2.fromOffset(270, 165), UDim2.new(0.5, -135, 0.77, -85), gui, C.bg);
+flyPanel.Visible = false;
+flyPanel.ZIndex = 10;
+local flyHeader = make("TextButton", {Size=UDim2.new(1, -60, 0, 32),Position=UDim2.fromOffset(8, 3),BackgroundTransparency=1,Text="◆ CRIMSON FLY",TextColor3=C.white,Font=Enum.Font.GothamBlack,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,AutoButtonColor=false,ZIndex=11}, flyPanel);
+local flyMin = make("TextButton", {Size=UDim2.fromOffset(25, 25),Position=UDim2.new(1, -53, 0, 5),BackgroundColor3=C.card,Text="−",TextColor3=C.white,Font=Enum.Font.GothamBold,TextSize=17,ZIndex=12}, flyPanel);
+round(flyMin, 6);
+local flyClose = make("TextButton", {Size=UDim2.fromOffset(25, 25),Position=UDim2.new(1, -25, 0, 5),BackgroundColor3=C.red,Text="×",TextColor3=C.white,Font=Enum.Font.GothamBold,TextSize=16,ZIndex=12}, flyPanel);
+round(flyClose, 6);
+local flyMini = make("TextButton", {Size=UDim2.fromOffset(58, 40),Position=UDim2.new(0.5, -29, 0.77, 0),BackgroundColor3=C.red,Text="FLY +",TextColor3=C.white,Font=Enum.Font.GothamBlack,TextSize=12,Visible=false,Active=true,ZIndex=20}, gui);
+round(flyMini, 9);
+local flyOn = false;
+local flySpeed = 40;
+local vertical = 0;
+local flyVelocity, flyAttachment;
+local oldAutoRotate;
+local function flyButton(parent, text, pos, size)
+	local b = make("TextButton", {Size=size,Position=pos,BackgroundColor3=C.red,Text=text,TextColor3=C.white,Font=Enum.Font.GothamBold,TextSize=12,ZIndex=12}, parent);
+	round(b, 7);
+	return b;
+end
+local up = flyButton(flyPanel, "UP ▲", UDim2.fromOffset(8, 42), UDim2.fromOffset(76, 35));
+local down = flyButton(flyPanel, "DOWN ▼", UDim2.fromOffset(8, 83), UDim2.fromOffset(76, 35));
+local speedDown = flyButton(flyPanel, "−", UDim2.fromOffset(94, 42), UDim2.fromOffset(35, 35));
+local speedText = make("TextLabel", {Size=UDim2.fromOffset(68, 35),Position=UDim2.fromOffset(132, 42),BackgroundColor3=C.card,Text="Speed: 40",TextColor3=C.white,Font=Enum.Font.GothamBold,TextSize=10,ZIndex=12}, flyPanel);
+round(speedText, 7);
+local speedUp = flyButton(flyPanel, "+", UDim2.fromOffset(207, 42), UDim2.fromOffset(35, 35));
+local flyToggle = flyButton(flyPanel, "FLY: OFF", UDim2.fromOffset(94, 83), UDim2.fromOffset(148, 35));
+local function stopFly()
+	flyOn = false;
+	vertical = 0;
+	if flyVelocity then
+		flyVelocity:Destroy();
+		flyVelocity = nil;
+	end
+	if flyAttachment then
+		flyAttachment:Destroy();
+		flyAttachment = nil;
+	end
+	local h = humanoid();
+	if h then
+		h.PlatformStand = false;
+		if (oldAutoRotate ~= nil) then
+			h.AutoRotate = oldAutoRotate;
+		end
+	end
+	flyToggle.Text = "FLY: OFF";
+	flyToggle.BackgroundColor3 = C.red;
+end
+local function startFly()
+	stopFly();
+	local r = root();
+	local h = humanoid();
+	if (not r or not h) then
+		return;
+	end
+	oldAutoRotate = h.AutoRotate;
+	h.AutoRotate = true;
+	h.PlatformStand = false;
+	flyAttachment = make("Attachment", {}, r);
+	flyVelocity = make("LinearVelocity", {Attachment0=flyAttachment,RelativeTo=Enum.ActuatorRelativeTo.World,MaxForce=1000000,VectorVelocity=Vector3.zero}, r);
+	flyOn = true;
+	flyToggle.Text = "FLY: ON";
+	flyToggle.BackgroundColor3 = Color3.fromRGB(35, 135, 75);
+end
+local function holdVertical(button, amount)
+	button.InputBegan:Connect(function(input)
+		if ((input.UserInputType == Enum.UserInputType.MouseButton1) or (input.UserInputType == Enum.UserInputType.Touch)) then
+			vertical = amount;
+		end
+	end);
+	button.InputEnded:Connect(function(input)
+		if ((input.UserInputType == Enum.UserInputType.MouseButton1) or (input.UserInputType == Enum.UserInputType.Touch)) then
+			if (vertical == amount) then
+				vertical = 0;
+			end
+		end
+	end);
+end
+holdVertical(up, 1);
+holdVertical(down, -1);
+speedDown.Activated:Connect(function()
+	flySpeed = math.max(10, flySpeed - 10);
+	speedText.Text = "Speed: " .. flySpeed;
+end);
+speedUp.Activated:Connect(function()
+	flySpeed = math.min(200, flySpeed + 10);
+	speedText.Text = "Speed: " .. flySpeed;
+end);
+flyToggle.Activated:Connect(function()
+	if flyOn then
+		stopFly();
+	else
+		startFly();
+	end
+end);
+flyMin.Activated:Connect(function()
+	flyPanel.Visible = false;
+	flyMini.Visible = true;
+end);
+flyMini.Activated:Connect(function()
+	flyPanel.Visible = true;
+	flyMini.Visible = false;
+end);
+flyClose.Activated:Connect(function()
+	stopFly();
+	flyPanel.Visible = false;
+	flyMini.Visible = false;
+end);
+makeDraggable(flyHeader, flyPanel);
+makeDraggable(flyMini, flyMini, function()
+	flyPanel.Visible = true;
+	flyMini.Visible = false;
+end);
+card(movement, "Open Fly Controls", "Open the red panel with UP, DOWN and speed", function()
+	flyPanel.Visible = true;
+	flyMini.Visible = false;
+end);
+local tp = page("Teleport");
+local savedPosition;
+card(tp, "Save Position", "Save your current location", function()
+	local r = root();
+	if r then
+		savedPosition = r.CFrame;
+	end
+end);
+card(tp, "Teleport to Saved", "Return to your saved location", function()
+	local r = root();
+	if (r and savedPosition) then
+		r.CFrame = savedPosition;
+	end
+end);
+local visual = page("Visuals");
+local highlights = {};
+local nameTags = {};
+local function clearESP()
+	for pl, obj in pairs(highlights) do
+		if obj then
+			obj:Destroy();
+		end
+		highlights[pl] = nil;
+	end
+	for pl, obj in pairs(nameTags) do
+		if obj then
+			obj:Destroy();
+		end
+		nameTags[pl] = nil;
+	end
+end
+local function updatePlayerVisual(pl)
+	if (pl == player) then
+		return;
+	end
+	local character = pl.Character;
+	if not character then
+		return;
+	end
+	if state.esp then
+		local h = highlights[pl];
+		if (not h or not h.Parent) then
+			h = make("Highlight", {Name="CrimsonESP",FillColor=C.red,OutlineColor=C.white,FillTransparency=0.65,OutlineTransparency=0,DepthMode=Enum.HighlightDepthMode.AlwaysOnTop,Adornee=character}, gui);
+			highlights[pl] = h;
+		else
+			h.Adornee = character;
+		end
+	elseif highlights[pl] then
+		highlights[pl]:Destroy();
+		highlights[pl] = nil;
+	end
+	if state.nameESP then
+		local head = character:FindFirstChild("Head");
+		if not head then
+			return;
+		end
+		local tag = nameTags[pl];
+		if (not tag or not tag.Parent) then
+			tag = make("BillboardGui", {Name="CrimsonNameESP",Adornee=head,Size=UDim2.fromOffset(200, 35),StudsOffset=Vector3.new(0, 2.5, 0),AlwaysOnTop=true,MaxDistance=100000,Enabled=true}, gui);
+			local label = make("TextLabel", {Size=UDim2.fromScale(1, 1),BackgroundTransparency=1,Text=(pl.DisplayName .. " (@" .. pl.Name .. ")"),TextColor3=Color3.fromRGB(255, 95, 115),TextStrokeColor3=Color3.new(0, 0, 0),TextStrokeTransparency=0.15,Font=Enum.Font.GothamBold,TextScaled=true}, tag);
+			make("UITextSizeConstraint", {MinTextSize=9,MaxTextSize=16}, label);
+			nameTags[pl] = tag;
+		else
+			tag.Adornee = head;
+			local label = tag:FindFirstChildOfClass("TextLabel");
+			if label then
+				label.Text = pl.DisplayName .. " (@" .. pl.Name .. ")";
+			end
+		end
+	elseif nameTags[pl] then
+		nameTags[pl]:Destroy();
+		nameTags[pl] = nil;
+	end
+end
+local function refreshESP()
+	for _, pl in ipairs(Players:GetPlayers()) do
+		if (pl ~= player) then
+			updatePlayerVisual(pl);
+		end
+	end
+end
+toggle(visual, "ESP", "Red outlines around characters", "esp", function()
+	refreshESP();
+end);
+toggle(visual, "Name ESP", "Show usernames at long distances", "nameESP", function()
+	refreshESP();
+end);
+local function watchPlayer(pl)
+	if (pl == player) then
+		return;
+	end
+	pl.CharacterAdded:Connect(function()
+		task.wait(0.5);
+		if gui.Parent then
+			updatePlayerVisual(pl);
+		end
+	end);
+end
+for _, pl in ipairs(Players:GetPlayers()) do
+	watchPlayer(pl);
+end
+Players.PlayerAdded:Connect(function(pl)
+	watchPlayer(pl);
+	task.defer(refreshESP);
+end);
+Players.PlayerRemoving:Connect(function(pl)
+	if highlights[pl] then
+		highlights[pl]:Destroy();
+	end
+	if nameTags[pl] then
+		nameTags[pl]:Destroy();
+	end
+	highlights[pl] = nil;
+	nameTags[pl] = nil;
+end);
+local original = {Brightness=Lighting.Brightness,Ambient=Lighting.Ambient,FogEnd=Lighting.FogEnd};
+toggle(visual, "Full Bright", "Local lighting adjustment", "bright", function(on)
+	Lighting.Brightness = (on and 3) or original.Brightness;
+	Lighting.Ambient = (on and Color3.new(1, 1, 1)) or original.Ambient;
+	Lighting.FogEnd = (on and 100000) or original.FogEnd;
+end);
+local changedEffects = {};
+toggle(visual, "Performance Mode", "Disable decorative effects locally", "perf", function(on)
+	if on then
+		for _, v in ipairs(workspace:GetDescendants()) do
+			if (v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Beam")) then
+				changedEffects[v] = v.Enabled;
+				v.Enabled = false;
+			end
+		end
+	else
+		for v, oldValue in pairs(changedEffects) do
+			if v.Parent then
+				v.Enabled = oldValue;
+			end
+		end
+		table.clear(changedEffects);
+	end
+end);
+local settings = page("Settings");
+card(settings, "Reset Movement", "Restore default speed and jump", function()
+	state.speed = 16;
+	state.jump = 50;
+	speedBox.Text = "16";
+	jumpBox.Text = "50";
+	local h = humanoid();
+	if h then
+		h.WalkSpeed = 16;
+		h.UseJumpPower = true;
+		h.JumpPower = 50;
+	end
+end);
+card(settings, "Toggle UI", "Press RightShift on PC");
+selectPage("General");
+local frames = 0;
+local elapsed = 0;
+local renderConnection = Run.RenderStepped:Connect(function(dt)
+	frames = frames + 1;
+	elapsed = elapsed + dt;
+	if (elapsed >= 1) then
+		fpsLabel.Text = "FPS: " .. math.floor((frames / elapsed) + 0.5);
+		frames = 0;
+		elapsed = 0;
+		local ok, ping = pcall(function()
+			return player:GetNetworkPing() * 2000;
+		end);
+		if (ok and ping) then
+			pingLabel.Text = "PING: " .. math.floor(ping + 0.5) .. " ms";
+		else
+			pingLabel.Text = "PING: N/A";
+		end
+	end
+	if (flyOn and flyVelocity and flyVelocity.Parent) then
+		local h = humanoid();
+		if h then
+			local direction = h.MoveDirection;
+			flyVelocity.VectorVelocity = (direction * flySpeed) + Vector3.new(0, vertical * flySpeed, 0);
+		end
+	end
+end);
+local jumpConnection = UIS.JumpRequest:Connect(function()
+	if state.infinite then
+		local h = humanoid();
+		if h then
+			h:ChangeState(Enum.HumanoidStateType.Jumping);
+		end
+	end
+end);
+local noclipConnection = Run.Stepped:Connect(function()
+	if (state.noclip and player.Character) then
+		for _, v in ipairs(player.Character:GetDescendants()) do
+			if v:IsA("BasePart") then
+				v.CanCollide = false;
+			end
+		end
+	end
+end);
+local keyConnection = UIS.InputBegan:Connect(function(input, processed)
+	if (not processed and (input.KeyCode == Enum.KeyCode.RightShift)) then
+		showMain(not main.Visible);
+	end
+end);
+player.CharacterAdded:Connect(function(character)
+	stopFly();
+	task.wait(0.3);
+	local h = character:FindFirstChildOfClass("Humanoid");
+	if h then
+		h.WalkSpeed = state.speed;
+		h.UseJumpPower = true;
+		h.JumpPower = state.jump;
+	end
+	task.wait(0.3);
+	refreshESP();
+end);
+close.Activated:Connect(function()
+	stopFly();
+	clearESP();
+	Lighting.Brightness = original.Brightness;
+	Lighting.Ambient = original.Ambient;
+	Lighting.FogEnd = original.FogEnd;
+	for v, oldValue in pairs(changedEffects) do
+		if v.Parent then
+			v.Enabled = oldValue;
+		end
+	end
+	renderConnection:Disconnect();
+	jumpConnection:Disconnect();
+	noclipConnection:Disconnect();
+	keyConnection:Disconnect();
+	gui:Destroy();
+end);
+print("Crimson Hub Universal V2 loaded!");
